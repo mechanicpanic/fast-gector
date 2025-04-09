@@ -8,6 +8,9 @@ from src.model import GECToRModel
 from random import seed
 import deepspeed
 import os
+import torch
+from deepspeed.runtime.fp16.loss_scaler import DynamicLossScaler
+import torch.serialization
 
 class Predictor:
     def __init__(self, args):
@@ -59,8 +62,37 @@ class Predictor:
         )
         ds_engine, _, _, _ = deepspeed.initialize(
             args=args, model=model, model_parameters=model.parameters())
+        
+        # Add DynamicLossScaler to the safe globals for PyTorch 2.6 compatibility
+        try:
+            torch.serialization.add_safe_globals([DynamicLossScaler])
+        except AttributeError:
+            # Older PyTorch versions don't have add_safe_globals
+            pass
+        
         load_dir, tag = os.path.split(args.ckpt_path)
-        ds_engine.load_checkpoint(load_dir=load_dir, tag=tag, load_module_only=True, load_optimizer_states=False, load_lr_scheduler_states=False)
+        try:
+            ds_engine.load_checkpoint(load_dir=load_dir, tag=tag, load_module_only=True, load_optimizer_states=False, load_lr_scheduler_states=False)
+        except Exception as e:
+            if "weights_only" in str(e):
+                # For PyTorch 2.6+, try loading with weights_only=False
+                print("Warning: Attempting to load checkpoint with weights_only=False due to PyTorch 2.6+ compatibility issues")
+                # We need to patch deepspeed's checkpoint loading to use weights_only=False
+                # This is a bit hacky but should work for compatibility
+                import types
+                from functools import partial
+                
+                original_torch_load = torch.load
+                # Monkey patch torch.load to use weights_only=False
+                torch.load = lambda *args, **kwargs: original_torch_load(*args, **kwargs, weights_only=False)
+                
+                try:
+                    ds_engine.load_checkpoint(load_dir=load_dir, tag=tag, load_module_only=True, load_optimizer_states=False, load_lr_scheduler_states=False)
+                finally:
+                    # Restore original torch.load
+                    torch.load = original_torch_load
+            else:
+                raise
 
         return ds_engine
 
