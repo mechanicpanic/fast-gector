@@ -22,11 +22,19 @@ class SeqEncoder(nn.Module):
                 param.requires_grad_(requires_grad)
             self.activate_grad = requires_grad
 
-        output_dict = self.matched_embedder(
-            input_ids=input_dict["input_ids"],
-            token_type_ids=input_dict["token_type_ids"],
-            attention_mask=input_dict["attention_mask"],
-        )
+        # Check if the model is ModernBert and skip token_type_ids if it is
+        model_type = getattr(self.matched_embedder.config, 'model_type', '').lower()
+        if model_type == 'modernbert':
+            output_dict = self.matched_embedder(
+                input_ids=input_dict["input_ids"],
+                attention_mask=input_dict["attention_mask"],
+            )
+        else:
+            output_dict = self.matched_embedder(
+                input_ids=input_dict["input_ids"],
+                token_type_ids=input_dict["token_type_ids"],
+                attention_mask=input_dict["attention_mask"],
+            )
         last_hidden_states = output_dict[0]
         word_embeddings = self.mismatched_embedder.get_mismatched_embeddings(
             last_hidden_states,
