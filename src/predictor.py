@@ -36,12 +36,15 @@ class Predictor:
         
         # Print some sample label IDs to verify vocab is loaded correctly
         print("DEBUG: Sample labels from correction vocabulary:")
-        for tag, tag_id in list(self.vocab.correct_vocab["tag2id"].items())[:20]:  # Show first 20
+        tag2id_dict = self.vocab.correct_vocab["tag2id"].tag2id  # Access the underlying dictionary
+        for i, (tag, tag_id) in enumerate(tag2id_dict.items()):
+            if i >= 20:  # Show first 20
+                break
             print(f"  '{tag}': {tag_id}")
         
         # Check if there are any non-KEEP/PAD/UNK labels
         special_labels = {KEEP_LABEL, PAD_LABEL, UNK_LABEL}
-        non_special_labels = [tag for tag in self.vocab.correct_vocab["tag2id"].keys() 
+        non_special_labels = [tag for tag in tag2id_dict.keys() 
                              if tag not in special_labels]
         print(f"DEBUG: Found {len(non_special_labels)} non-special labels (first 10):")
         for label in non_special_labels[:10]:
