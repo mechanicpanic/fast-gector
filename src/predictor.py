@@ -25,6 +25,13 @@ class Predictor:
         self.max_pieces_per_token = args.max_pieces_per_token
         self.vocab = Seq2EditVocab(
             args.detect_vocab_path, args.correct_vocab_path, unk2keep=bool(args.unk2keep))
+        
+        # DEBUG: Print vocabs
+        print(f"DEBUG: Loaded detect vocab from {args.detect_vocab_path}")
+        print(f"DEBUG: Loaded correct vocab from {args.correct_vocab_path}")
+        print(f"DEBUG: KEEP_LABEL id: {self.vocab.correct_vocab['tag2id'][KEEP_LABEL]}")
+        print(f"DEBUG: Using model from: {args.pretrained_transformer_path}")
+        print(f"DEBUG: Using checkpoint from: {args.ckpt_path}")
         self.base_tokenizer = AutoTokenizer.from_pretrained(
             args.pretrained_transformer_path, do_basic_tokenize=False)
         self.base_tokenizer_vocab = self.base_tokenizer.get_vocab()
@@ -71,9 +78,13 @@ class Predictor:
             pass
         
         load_dir, tag = os.path.split(args.ckpt_path)
+        print(f"DEBUG: Loading checkpoint from directory: {load_dir}, tag: {tag}")
         try:
+            print("DEBUG: Attempting to load checkpoint with default settings")
             ds_engine.load_checkpoint(load_dir=load_dir, tag=tag, load_module_only=True, load_optimizer_states=False, load_lr_scheduler_states=False)
+            print("DEBUG: Successfully loaded checkpoint")
         except Exception as e:
+            print(f"DEBUG: Error loading checkpoint: {str(e)}")
             if "weights_only" in str(e):
                 # For PyTorch 2.6+, try loading with weights_only=False
                 print("Warning: Attempting to load checkpoint with weights_only=False due to PyTorch 2.6+ compatibility issues")
@@ -88,6 +99,7 @@ class Predictor:
                 
                 try:
                     ds_engine.load_checkpoint(load_dir=load_dir, tag=tag, load_module_only=True, load_optimizer_states=False, load_lr_scheduler_states=False)
+                    print("DEBUG: Successfully loaded checkpoint with weights_only=False")
                 finally:
                     # Restore original torch.load
                     torch.load = original_torch_load
@@ -163,13 +175,24 @@ class Predictor:
             # since we add special tokens before truncation, max_len should minus 1. This is different from original gector.
             edits = []
 
+            # DEBUG: Print prediction details
+            sent = " ".join(tokens)
+            if len(sent) > 50:
+                sent = sent[:50] + "..."
+            print(f"DEBUG: Processing: {sent}")
+            print(f"DEBUG: max_label_id={max(label_ids)}, keep_id={keep_id}, is_all_keep={max(label_ids) == keep_id}")
+            print(f"DEBUG: max_incor_prob={incor_prob}, min_threshold={self.min_error_probability}")
+            print(f"DEBUG: First few label IDs: {label_ids[:10]} (truncated)")
+            
             # skip the whole sent if all labels are $KEEP
             if max(label_ids) == keep_id:
+                print("DEBUG: Skipping - all labels are KEEP")
                 all_results.append(tokens)
                 continue
 
             # if max detect_incor_probs < min_error_prob, skip
             if incor_prob < self.min_error_probability:
+                print("DEBUG: Skipping - max error probability below threshold")
                 all_results.append(tokens)
                 continue
 
