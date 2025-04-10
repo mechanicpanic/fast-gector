@@ -208,14 +208,28 @@ class Predictor:
                 if re.search("\s+", token):
                     continue
                 label = self.vocab.correct_vocab["id2tag"][label_ids[idx]]
+                # Debug label detection
+                print(f"DEBUG: Found non-$KEEP label at pos {idx}: '{label}' for token '{token}' with prob {label_probs[idx]}")
+                
                 action = self.get_label_action(
                     token, idx, label_probs[idx], label)
 
                 if not action:
+                    print(f"DEBUG: Action discarded - label '{label}' prob {label_probs[idx]} < {self.min_error_probability} or special label")
                     continue
+                
+                print(f"DEBUG: Adding edit: {action} for token '{token}'")
                 edits.append(action)
-            # append the target sent (list of target tokens)
-            all_results.append(get_target_sent_by_edits(tokens, edits))
+            # Debug final edits
+            print(f"DEBUG: Final edits for sentence: {edits}")
+            if edits:
+                print(f"DEBUG: Original text: '{' '.join(tokens)}'")
+                result = get_target_sent_by_edits(tokens, edits)
+                print(f"DEBUG: Edited text: '{' '.join(result)}'")
+                all_results.append(result)
+            else:
+                print("DEBUG: No edits applied, keeping original")
+                all_results.append(tokens)
         return all_results
 
     def update_final_batch(self, final_batch, pred_ids, pred_batch,
@@ -242,7 +256,15 @@ class Predictor:
         return final_batch, new_pred_ids, total_updated
 
     def get_label_action(self, token: str, idx: int, label_prob: float, label: str):
-        if label_prob < self.min_error_probability or label in [UNK_LABEL, PAD_LABEL, KEEP_LABEL]:
+        # Debug label action generation
+        print(f"DEBUG: get_label_action for token='{token}', label='{label}', prob={label_prob}")
+        
+        if label_prob < self.min_error_probability:
+            print(f"DEBUG: Rejecting - probability {label_prob} < threshold {self.min_error_probability}")
+            return None
+        
+        if label in [UNK_LABEL, PAD_LABEL, KEEP_LABEL]:
+            print(f"DEBUG: Rejecting - special label {label}")
             return None
 
         if label.startswith("$REPLACE_") or label.startswith("$TRANSFORM_") or label == "$DELETE":
@@ -251,16 +273,19 @@ class Predictor:
         elif label.startswith("$APPEND_") or label.startswith("$MERGE_"):
             start_pos = idx + 1
             end_pos = idx + 1
+        else:
+            print(f"DEBUG: Unknown label format: {label}")
 
         if label == "$DELETE":
             processed_label = ""
-
         elif label.startswith("$TRANSFORM_") or label.startswith("$MERGE_"):
             processed_label = label[:]
-
         else:
             processed_label = label[label.index("_")+1:]
-        return start_pos - 1, end_pos - 1, processed_label, label_prob
+            
+        action = (start_pos - 1, end_pos - 1, processed_label, label_prob)
+        print(f"DEBUG: Created action: {action}")
+        return action
 
     def build_input_dict(self, input_ids, offsets, word_level_len):
         token_type_ids = [0 for _ in range(len(input_ids))]
