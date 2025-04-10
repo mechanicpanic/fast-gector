@@ -94,6 +94,8 @@ if __name__ == "__main__":
     parser.add_argument("--special_tokens_fix", type=int, default=0)
     parser.add_argument("--segmented", type=int, default=0)
     parser.add_argument("--detokenize", type=int, default=0)
+    parser.add_argument("--debug_force_edit", type=int, default=0, 
+                       help="If 1, force a fake edit on every 3rd token for debugging")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
     main(args)

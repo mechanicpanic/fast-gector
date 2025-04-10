@@ -23,6 +23,7 @@ class Predictor:
         self.max_num_tokens = args.max_num_tokens
         self.min_error_probability = args.min_error_probability
         self.max_pieces_per_token = args.max_pieces_per_token
+        self.debug_force_edit = getattr(args, 'debug_force_edit', 0)
         self.vocab = Seq2EditVocab(
             args.detect_vocab_path, args.correct_vocab_path, unk2keep=bool(args.unk2keep))
         
@@ -32,6 +33,23 @@ class Predictor:
         print(f"DEBUG: KEEP_LABEL id: {self.vocab.correct_vocab['tag2id'][KEEP_LABEL]}")
         print(f"DEBUG: Using model from: {args.pretrained_transformer_path}")
         print(f"DEBUG: Using checkpoint from: {args.ckpt_path}")
+        
+        # Print some sample label IDs to verify vocab is loaded correctly
+        print("DEBUG: Sample labels from correction vocabulary:")
+        for tag, tag_id in list(self.vocab.correct_vocab["tag2id"].items())[:20]:  # Show first 20
+            print(f"  '{tag}': {tag_id}")
+        
+        # Check if there are any non-KEEP/PAD/UNK labels
+        special_labels = {KEEP_LABEL, PAD_LABEL, UNK_LABEL}
+        non_special_labels = [tag for tag in self.vocab.correct_vocab["tag2id"].keys() 
+                             if tag not in special_labels]
+        print(f"DEBUG: Found {len(non_special_labels)} non-special labels (first 10):")
+        for label in non_special_labels[:10]:
+            print(f"  '{label}'")
+            
+        if not non_special_labels:
+            print("DEBUG: ERROR - No correction labels found in vocabulary!")
+            print("DEBUG: This explains why no corrections are being made.")
         self.base_tokenizer = AutoTokenizer.from_pretrained(
             args.pretrained_transformer_path, do_basic_tokenize=False)
         self.base_tokenizer_vocab = self.base_tokenizer.get_vocab()
@@ -182,10 +200,27 @@ class Predictor:
             print(f"DEBUG: Processing: {sent}")
             print(f"DEBUG: max_label_id={max(label_ids)}, keep_id={keep_id}, is_all_keep={max(label_ids) == keep_id}")
             print(f"DEBUG: max_incor_prob={incor_prob}, min_threshold={self.min_error_probability}")
-            print(f"DEBUG: First few label IDs: {label_ids[:10]} (truncated)")
             
-            # skip the whole sent if all labels are $KEEP
-            if max(label_ids) == keep_id:
+            # Print all labels and their IDs for analysis
+            id_to_tag = self.vocab.correct_vocab["id2tag"]
+            print(f"DEBUG: Label ID mapping:")
+            for i, label_id in enumerate(label_ids):
+                if i < len(tokens):
+                    token = tokens[i] if i > 0 else START_TOKEN
+                    label = id_to_tag[label_id]
+                    print(f"  Token: '{token}', Label ID: {label_id}, Label: '{label}'")
+            
+            # Force an edit to verify edit application works if debug flag is set
+            if bool(self.debug_force_edit) and len(tokens) > 3:
+                print("DEBUG: Forcing test edits to verify edit application works")
+                # Add a replacement edit for every 3rd token
+                for i in range(2, min(len(tokens), 10), 3):  # Limit to first 10 tokens
+                    forced_edit = (i, i+1, f"FORCED_EDIT_{i}", 1.0)
+                    edits.append(forced_edit)
+                    print(f"DEBUG: Added forced edit: {forced_edit} for token '{tokens[i]}'")
+            
+            # skip the whole sent if all labels are $KEEP and not in debug mode
+            if max(label_ids) == keep_id and not bool(self.debug_force_edit):
                 print("DEBUG: Skipping - all labels are KEEP")
                 all_results.append(tokens)
                 continue
